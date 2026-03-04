@@ -26,7 +26,10 @@ def construct_feature_space(image: np.array, spatial_weight: float) -> np.array:
     """
     # TASK 1.1 #
     h, w = image.shape[:2]
-
+    xv, yv = np.meshgrid(np.arange(0, h), np.arange(0, w), indexing='ij')
+    coors = np.stack((xv, yv), axis=-1).astype(np.float64)
+    coors *= spatial_weight
+    features = np.concatenate((coors, image), axis=2).reshape((-1, 5))
     # TASK 1.1 #
 
     return features
@@ -49,15 +52,17 @@ def mean_shift_step(data: np.array, point: np.array, bandwidth: float) -> np.arr
         new_point (np.array): Updated point after one mean-shift step, shape (D,).
     """
     # TASK 1.2 #
-
+    distances = np.linalg.norm(data - point, axis = 1)
+    w = np.exp(-distances ** 2 / (2 * bandwidth ** 2))
+    w = w[..., np.newaxis]
+    new_point = np.sum(w * data, axis=0) / np.sum(w)
     # TASK 1.2 #
 
     return new_point
 
 
 # TASK 1.3 #
-def mean_shift_segmentation(data: np.array, bandwidth: float,
-                            threshold: float = 1e-3, max_iter: int = 50) -> np.array:
+def mean_shift_segmentation(data: np.array, bandwidth: float, threshold: float = 1e-3, max_iter: int = 50) -> np.array:
     """Run Mean-Shift segmentation on the data.
 
     For each point:
@@ -77,6 +82,32 @@ def mean_shift_segmentation(data: np.array, bandwidth: float,
         labels (np.array): Segment label for each data point, shape (N,).
     """
     # TASK 1.3 #
+    N = data.shape[0]
+    modes = np.zeros_like(data)
+    for i in range(N):
+        point = data[i].copy()
+        for _ in range(max_iter):
+            new_point = mean_shift_step(data, point, bandwidth)
+            if np.linalg.norm(new_point - point) < threshold:
+                point = new_point
+                break
+            point = new_point
+        modes[i] = point
+
+    labels = -np.ones(N, dtype=int)
+    current_label = 0
+
+    # very naive approach.
+    # iterate from left to right, on unassigned mode
+    # find all other nearby unassigned modes and merge them
+    for i in range(N):
+        if labels[i] != -1:
+            continue
+        distances = np.linalg.norm(modes - modes[i], axis=1)
+        mask = (distances < bandwidth / 2) & (labels == -1)
+        labels[mask] = current_label
+        current_label += 1
+    
 
     # TASK 1.3 #
 
@@ -106,7 +137,12 @@ def create_gabor_filter(sigma: float, theta: float, lambd: float, psi: float = 0
         kernel (np.array): 2D Gabor filter kernel.
     """
     # TASK 2.1 #
-
+    h = 6 * int(sigma) + 1
+    len = h // 2
+    xs, ys = np.meshgrid(np.arange(-len, len + 1), np.arange(-len, len + 1), indexing='ij')
+    x = xs * np.cos(theta) + ys * np.sin(theta)
+    y = -xs * np.sin(theta) + ys * np.cos(theta)
+    kernel = np.exp(-(x ** 2 + 0.25 * y ** 2) / (2 * sigma ** 2)) * np.cos(2 * np.pi * x / lambd + psi)
     # TASK 2.1 #
 
     return kernel
@@ -125,7 +161,10 @@ def create_log_filter(sigma: int) -> np.array:
         kernel (np.array): LoG kernel.
     """
     # TASK 2.2 #
-
+    h = 6 * int(sigma) + 1
+    len = h // 2
+    x, y = np.meshgrid(np.arange(-len, len + 1), np.arange(-len, len + 1), indexing='ij')
+    kernel = -(1 / (np.pi * sigma**4)) * (1 - ((x**2 + y**2) / (2 * sigma**2))) * np.exp(-(x**2 + y**2) / (2 * sigma**2))
     # TASK 2.2 #
 
     return kernel
@@ -154,7 +193,9 @@ def build_filter_bank_responses(image: np.array, filter_bank: list) -> np.array:
         feats (np.array): Feature map of shape (H, W, 12).
     """
     # TASK 2.3 #
-
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY).astype(np.float64) / 255.0
+    results = list(map(lambda kernel: convolve(gray, kernel, mode='reflect'), filter_bank))
+    feats = np.stack(results, axis=-1)
     # TASK 2.3 #
 
     return feats
