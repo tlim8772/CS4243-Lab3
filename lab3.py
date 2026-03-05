@@ -5,6 +5,7 @@ TA: He Qiyuan.
 import numpy as np
 import cv2
 from scipy.ndimage import convolve
+import itertools
 
 
 # ============================================================
@@ -236,7 +237,15 @@ class TextonDictionary:
             training_imgs (list[np.array]): List of training RGB images.
         """
         # TASK 2.4a #
+        D = len(self.filter_bank)
+        imgs_response = list(map(lambda img: build_filter_bank_responses(img, self.filter_bank).reshape(-1, D), training_imgs))
+        data = np.concatenate(imgs_response, axis=0).reshape(-1, D)
 
+        kmeans = MiniBatchKMeans(n_clusters=self.n_textons, random_state=0, batch_size=1000)
+        kmeans.fit(data)
+        self.cluster_centers_ = kmeans.cluster_centers_
+
+        self.tree_ = KDTree(kmeans.cluster_centers_)
         # TASK 2.4a #
 
         pass
@@ -262,7 +271,11 @@ class TextonDictionary:
             texton_map (np.array): Texton ID map of shape (H, W).
         """
         # TASK 2.4b #
-
+        H, W = img.shape[:2]
+        D = len(self.filter_bank)
+        img_response = build_filter_bank_responses(img, self.filter_bank)
+        data = img_response.reshape(-1, D)
+        texton_map = self.tree_.query(data, return_distance=False).flatten().reshape(H, W)
         # TASK 2.4b #
 
         return texton_map
@@ -276,15 +289,25 @@ def compute_texton_histogram(texton_map: np.array, n_textons: int, window_size: 
     centered at that pixel. Compute the normalized histogram (sum to 1).
 
     Args:
-        texton_map (np.array): Texton ID map of shape (H, W).
+        texton_map (np.array): Texton ID map of shape (H, W). Range of values must be [0, n_textons)
         n_textons (int): Number of textons (histogram bins).
-        window_size (int): Side length of the rectangular window.
+        window_size (int): Side length of the rectangular window. Must be odd.
 
     Returns:
         hists (np.array): Per-pixel histogram features of shape (H, W, n_textons).
     """
     # TASK 2.5 #
-
+    # range of values for labels is [0, n_textons)
+    H, W = texton_map.shape[:2]
+    gap = window_size // 2
+    hists = np.zeros((H, W, n_textons))
+    bins = [i for i in range(n_textons + 1)]
+    for i, j in itertools.product(range(H), range(W)):
+        rs, re = max(0, i - gap), min(H - 1, i + gap)
+        cs, ce = max(0, j - gap), min(W - 1, j + gap)
+        values, _ =  np.histogram(texton_map[rs:re+1, cs:ce+1], bins)
+        values = values / ((re - rs + 1) * (ce - cs + 1))
+        hists[i, j] = values
     # TASK 2.5 #
 
     return hists
