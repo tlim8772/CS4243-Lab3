@@ -28,8 +28,7 @@ def construct_feature_space(image: np.array, spatial_weight: float) -> np.array:
     # TASK 1.1 #
     h, w = image.shape[:2]
     xv, yv = np.meshgrid(np.arange(0, h), np.arange(0, w), indexing='ij')
-    coors = np.stack((xv, yv), axis=-1).astype(np.float64)
-    coors *= spatial_weight
+    coors = np.stack((xv, yv), axis=-1).astype(np.float64) * spatial_weight
     features = np.concatenate((coors, image), axis=2).reshape((-1, 5))
     # TASK 1.1 #
 
@@ -140,7 +139,7 @@ def create_gabor_filter(sigma: float, theta: float, lambd: float, psi: float = 0
     # TASK 2.1 #
     h = 6 * int(sigma) + 1
     len = h // 2
-    xs, ys = np.meshgrid(np.arange(-len, len + 1), np.arange(-len, len + 1), indexing='ij')
+    xs, ys = np.meshgrid(np.arange(-len, len + 1), np.arange(-len, len + 1), indexing='xy')
     x = xs * np.cos(theta) + ys * np.sin(theta)
     y = -xs * np.sin(theta) + ys * np.cos(theta)
     kernel = np.exp(-(x ** 2 + 0.25 * y ** 2) / (2 * sigma ** 2)) * np.cos(2 * np.pi * x / lambd + psi)
@@ -239,7 +238,7 @@ class TextonDictionary:
         # TASK 2.4a #
         D = len(self.filter_bank)
         imgs_response = list(map(lambda img: build_filter_bank_responses(img, self.filter_bank).reshape(-1, D), training_imgs))
-        data = np.concatenate(imgs_response, axis=0).reshape(-1, D)
+        data = np.concatenate(imgs_response, axis=0)
 
         kmeans = MiniBatchKMeans(n_clusters=self.n_textons, random_state=0, batch_size=1000)
         kmeans.fit(data)
@@ -271,9 +270,8 @@ class TextonDictionary:
             texton_map (np.array): Texton ID map of shape (H, W).
         """
         # TASK 2.4b #
-        H, W = img.shape[:2]
-        D = len(self.filter_bank)
         img_response = build_filter_bank_responses(img, self.filter_bank)
+        H, W, D = img_response.shape
         data = img_response.reshape(-1, D)
         texton_map = self.tree_.query(data, return_distance=False).flatten().reshape(H, W)
         # TASK 2.4b #
